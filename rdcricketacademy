@@ -1,0 +1,702 @@
+import React, { useMemo, useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Download, LogOut, Plus, Trophy, User2 } from "lucide-react";
+import { motion } from "framer-motion";
+
+/**
+ * RD Cricket Academy — Single‑file React App
+ * Features:
+ * - Player login (demo auth stored in localStorage)
+ * - Admin panel to create matches & enter scorecards
+ * - Player history: total runs, wickets, catches, per‑match card
+ * - Team leaderboard (totals)
+ * - Export data to JSON (download)
+ * Branding: rdcricketacademy • built for Giri Vishwan
+ *
+ * NOTE: This is a demo (no server). To make it production, hook the data layer to a backend (Supabase/Firebase/Express+Mongo).
+ */
+
+// --------------------------- Demo Data Layer ---------------------------
+const LS_KEY = "rdc_v1_store";
+
+const seed = {
+    users: [
+        { id: "u1", name: "Giri Vishwan", email: "admin@rdcricketacademy.in", password: "admin123", role: "admin" },
+        { id: "u2", name: "Ravi Patel", email: "ravi@rdca.in", password: "player123", role: "player" },
+        { id: "u3", name: "Aman Khan", email: "aman@rdca.in", password: "player123", role: "player" },
+        { id: "u4", name: "Jigar Shah", email: "jigar@rdca.in", password: "player123", role: "player" },
+    ],
+    matches: [
+        { id: "m1", date: "2025-08-15", opponent: "Sunrise CC", ground: "Sarkhej Ground" },
+        { id: "m2", date: "2025-08-18", opponent: "Warriors XI", ground: "SBS Ground" },
+    ],
+    performances: [
+        { matchId: "m1", playerId: "u2", runs: 42, wickets: 1, catches: 1 },
+        { matchId: "m1", playerId: "u3", runs: 11, wickets: 2, catches: 0 },
+        { matchId: "m1", playerId: "u4", runs: 7, wickets: 0, catches: 2 },
+        { matchId: "m2", playerId: "u2", runs: 67, wickets: 0, catches: 0 },
+    ],
+    session: null,
+};
+
+function loadStore() {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return seed;
+    try { return JSON.parse(raw); } catch { return seed; }
+}
+
+function saveStore(store) { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+
+function useStore() {
+    const [store, setStore] = useState(seed);
+    useEffect(() => { setStore(loadStore()); }, []);
+    useEffect(() => { saveStore(store); }, [store]);
+    return [store, setStore];
+}
+
+// Helpers
+const uid = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 9)}`;
+const byId = (arr, id) => arr.find((x) => x.id === id);
+
+// --------------------------- Auth ---------------------------
+function useSession(store, setStore) {
+    const session = store.session;
+    const login = (email, password) => {
+        const user = store.users.find((u) => u.email === email && u.password === password);
+        if (!user) throw new Error("Invalid credentials");
+        setStore({...store, session: { userId: user.id } });
+    };
+    const logout = () => setStore({...store, session: null });
+    const me = session ? store.users.find((u) => u.id === session.userId) : null;
+    return { me, login, logout };
+}
+
+// --------------------------- UI Atoms ---------------------------
+const Header = ({ me, onLogout }) => ( <
+    div className = "sticky top-0 z-10 bg-white/70 backdrop-blur border-b" >
+    <
+    div className = "max-w-6xl mx-auto px-4 py-3 flex items-center justify-between" >
+    <
+    motion.div initial = {
+        { opacity: 0, y: -8 } }
+    animate = {
+        { opacity: 1, y: 0 } }
+    className = "flex items-center gap-3" >
+    <
+    div className = "h-10 w-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-lime-400" / >
+    <
+    div >
+    <
+    div className = "text-xl font-extrabold tracking-tight" > RD Cricket Academy < /div> <
+    div className = "text-xs text-muted-foreground" > rdcricketacademy• built
+    for < span className = "font-medium" > Giri Vishwan < /span></div >
+    <
+    /div> <
+    /motion.div>
+
+    {
+        me ? ( <
+            div className = "flex items-center gap-3" >
+            <
+            Badge variant = "secondary"
+            className = "rounded-xl" > { me.role.toUpperCase() } < /Badge> <
+            div className = "text-sm flex items-center gap-2" > < User2 className = "h-4 w-4" / > { me.name } < /div> <
+            Button variant = "outline"
+            size = "sm"
+            onClick = { onLogout } > < LogOut className = "h-4 w-4 mr-1" / > Logout < /Button> <
+            /div>
+        ) : null
+    } <
+    /div> <
+    /div>
+);
+
+// --------------------------- Auth Form ---------------------------
+function LoginCard({ onLogin }) {
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [err, setErr] = useState("");
+    const submit = () => {
+        try { setErr("");
+            onLogin(email, password); } catch (e) { setErr(e.message); }
+    };
+    return ( <
+        motion.div initial = {
+            { opacity: 0, y: 8 } }
+        animate = {
+            { opacity: 1, y: 0 } }
+        className = "max-w-md mx-auto pt-10" >
+        <
+        Card className = "shadow-lg rounded-2xl" >
+        <
+        CardHeader >
+        <
+        CardTitle className = "text-2xl" > Sign in < /CardTitle> <
+        p className = "text-sm text-muted-foreground" > Use demo accounts: < span className = "font-medium" > admin @rdcricketacademy.in / admin123 < /span> or <span className="font-medium">ravi@rdca.in /
+        player123 < /span></p >
+        <
+        /CardHeader> <
+        CardContent className = "space-y-4" >
+        <
+        div className = "space-y-2" >
+        <
+        Label > Email < /Label> <
+        Input placeholder = "you@rdca.in"
+        value = { email }
+        onChange = {
+            (e) => setEmail(e.target.value) }
+        /> <
+        /div> <
+        div className = "space-y-2" >
+        <
+        Label > Password < /Label> <
+        Input type = "password"
+        placeholder = "••••••••"
+        value = { password }
+        onChange = {
+            (e) => setPassword(e.target.value) }
+        /> <
+        /div> {
+            err && < div className = "text-red-600 text-sm" > { err } < /div>} <
+                Button className = "w-full"
+            onClick = { submit } > Login < /Button> <
+                /CardContent> <
+                /Card> <
+                /motion.div>
+        );
+    }
+
+    // --------------------------- Admin: Create Match ---------------------------
+    function NewMatch({ onCreate }) {
+        const [date, setDate] = useState("");
+        const [opponent, setOpponent] = useState("");
+        const [ground, setGround] = useState("");
+        return ( <
+            div className = "grid sm:grid-cols-3 gap-3" >
+            <
+            Input type = "date"
+            value = { date }
+            onChange = {
+                (e) => setDate(e.target.value) }
+            /> <
+            Input placeholder = "Opponent"
+            value = { opponent }
+            onChange = {
+                (e) => setOpponent(e.target.value) }
+            /> <
+            div className = "flex gap-2" >
+            <
+            Input className = "flex-1"
+            placeholder = "Ground"
+            value = { ground }
+            onChange = {
+                (e) => setGround(e.target.value) }
+            /> <
+            Button onClick = {
+                () => { if (!date || !opponent || !ground) return;
+                    onCreate({ id: uid("m"), date, opponent, ground });
+                    setDate("");
+                    setOpponent("");
+                    setGround(""); } } > < Plus className = "h-4 w-4 mr-1" / > Add < /Button> <
+            /div> <
+            /div>
+        );
+    }
+
+    // --------------------------- Admin: Enter Scores ---------------------------
+    function ScoreEntry({ players, match, performances, onSave }) {
+        const rows = players.map(p => {
+            const perf = performances.find(x => x.matchId === match.id && x.playerId === p.id) || { runs: 0, wickets: 0, catches: 0 };
+            return { player: p, ...perf };
+        });
+        const [data, setData] = useState(rows);
+        useEffect(() => { setData(rows); /* reset when match changes */ }, [match.id]);
+
+        const update = (pid, field, val) => setData(prev => prev.map(r => r.player.id === pid ? {...r, [field]: Number(val || 0) } : r));
+
+        return ( <
+            div className = "space-y-3" >
+            <
+            div className = "text-sm text-muted-foreground" > Scoring
+            for < span className = "font-medium" > { match.opponent } < /span> @ {match.ground} on {match.date}</div >
+            <
+            Table >
+            <
+            TableHeader >
+            <
+            TableRow >
+            <
+            TableHead > Player < /TableHead> <
+            TableHead className = "w-32" > Runs < /TableHead> <
+            TableHead className = "w-32" > Wickets < /TableHead> <
+            TableHead className = "w-32" > Catches < /TableHead> <
+            /TableRow> <
+            /TableHeader> <
+            TableBody > {
+                data.map(({ player, runs, wickets, catches }) => ( <
+                    TableRow key = { player.id } >
+                    <
+                    TableCell > { player.name } < /TableCell> <
+                    TableCell > < Input type = "number"
+                    min = { 0 }
+                    value = { runs }
+                    onChange = {
+                        (e) => update(player.id, "runs", e.target.value) }
+                    /></TableCell >
+                    <
+                    TableCell > < Input type = "number"
+                    min = { 0 }
+                    value = { wickets }
+                    onChange = {
+                        (e) => update(player.id, "wickets", e.target.value) }
+                    /></TableCell >
+                    <
+                    TableCell > < Input type = "number"
+                    min = { 0 }
+                    value = { catches }
+                    onChange = {
+                        (e) => update(player.id, "catches", e.target.value) }
+                    /></TableCell >
+                    <
+                    /TableRow>
+                ))
+            } <
+            /TableBody> <
+            /Table> <
+            div className = "flex justify-end" >
+            <
+            Button onClick = {
+                () => onSave(match.id, data.map(r => ({ matchId: match.id, playerId: r.player.id, runs: r.runs, wickets: r.wickets, catches: r.catches }))) } > Save Scores < /Button> <
+            /div> <
+            /div>
+        );
+    }
+
+    // --------------------------- Player: Stats & History ---------------------------
+    function calcTotals(store) {
+        const totals = {};
+        for (const u of store.users)
+            if (u.role === "player" || u.role === "admin") totals[u.id] = { runs: 0, wickets: 0, catches: 0 };
+        for (const p of store.performances)
+            if (totals[p.playerId]) {
+                totals[p.playerId].runs += p.runs;
+                totals[p.playerId].wickets += p.wickets;
+                totals[p.playerId].catches += p.catches;
+            }
+        return totals;
+    }
+
+    function PlayerHistory({ store, playerId }) {
+        const me = byId(store.users, playerId);
+        const items = store.performances.filter(p => p.playerId === playerId);
+        const withMatch = items.map(p => ({...p, match: byId(store.matches, p.matchId) }));
+        const totals = calcTotals(store)[playerId] || { runs: 0, wickets: 0, catches: 0 };
+        return ( <
+            div className = "space-y-4" >
+            <
+            div className = "grid sm:grid-cols-3 gap-3" >
+            <
+            Card className = "rounded-2xl" > < CardContent className = "p-4" > < div className = "text-sm text-muted-foreground" > Total Runs < /div><div className="text-2xl font-bold">{totals.runs}</div > < /CardContent></Card >
+            <
+            Card className = "rounded-2xl" > < CardContent className = "p-4" > < div className = "text-sm text-muted-foreground" > Wickets < /div><div className="text-2xl font-bold">{totals.wickets}</div > < /CardContent></Card >
+            <
+            Card className = "rounded-2xl" > < CardContent className = "p-4" > < div className = "text-sm text-muted-foreground" > Catches < /div><div className="text-2xl font-bold">{totals.catches}</div > < /CardContent></Card >
+            <
+            /div>
+
+            <
+            Card className = "rounded-2xl" >
+            <
+            CardHeader > < CardTitle > { me.name }
+            's Match History</CardTitle></CardHeader> <
+            CardContent >
+            <
+            Table >
+            <
+            TableHeader >
+            <
+            TableRow >
+            <
+            TableHead > Date < /TableHead> <
+            TableHead > Opponent < /TableHead> <
+            TableHead > Ground < /TableHead> <
+            TableHead > Runs < /TableHead> <
+            TableHead > Wickets < /TableHead> <
+            TableHead > Catches < /TableHead> <
+            /TableRow> <
+            /TableHeader> <
+            TableBody > {
+                withMatch.length === 0 ? ( <
+                    TableRow > < TableCell colSpan = { 6 }
+                    className = "text-center text-muted-foreground" > No records yet. < /TableCell></TableRow >
+                ) : withMatch.sort((a, b) => a.match.date.localeCompare(b.match.date)).map((r, i) => ( <
+                    TableRow key = { i } >
+                    <
+                    TableCell > { r.match.date } < /TableCell> <
+                    TableCell > { r.match.opponent } < /TableCell> <
+                    TableCell > { r.match.ground } < /TableCell> <
+                    TableCell > { r.runs } < /TableCell> <
+                    TableCell > { r.wickets } < /TableCell> <
+                    TableCell > { r.catches } < /TableCell> <
+                    /TableRow>
+                ))
+            } <
+            /TableBody> <
+            /Table> <
+            /CardContent> <
+            /Card> <
+            /div>
+        );
+    }
+
+    // --------------------------- Leaderboard ---------------------------
+    function Leaderboard({ store }) {
+        const totals = calcTotals(store);
+        const rows = store.users
+            .filter(u => u.role !== "guest")
+            .map(u => ({ user: u, ...totals[u.id] }))
+            .filter(r => r.runs + r.wickets + r.catches > 0)
+            .sort((a, b) => (b.runs + b.wickets * 20 + b.catches * 10) - (a.runs + a.wickets * 20 + a.catches * 10));
+
+        return ( <
+            Card className = "rounded-2xl" >
+            <
+            CardHeader >
+            <
+            CardTitle className = "flex items-center gap-2" > < Trophy className = "h-5 w-5" / > Leaderboard < /CardTitle> <
+            /CardHeader> <
+            CardContent >
+            <
+            Table >
+            <
+            TableHeader >
+            <
+            TableRow >
+            <
+            TableHead > # < /TableHead> <
+            TableHead > Player < /TableHead> <
+            TableHead > Runs < /TableHead> <
+            TableHead > Wickets < /TableHead> <
+            TableHead > Catches < /TableHead> <
+            TableHead > Impact < /TableHead> <
+            /TableRow> <
+            /TableHeader> <
+            TableBody > {
+                rows.length === 0 ? ( <
+                    TableRow > < TableCell colSpan = { 6 }
+                    className = "text-center text-muted-foreground" > No data yet. < /TableCell></TableRow >
+                ) : rows.map((r, i) => ( <
+                    TableRow key = { r.user.id } >
+                    <
+                    TableCell > { i + 1 } < /TableCell> <
+                    TableCell > { r.user.name } < /TableCell> <
+                    TableCell > { r.runs } < /TableCell> <
+                    TableCell > { r.wickets } < /TableCell> <
+                    TableCell > { r.catches } < /TableCell> <
+                    TableCell > { r.runs + r.wickets * 20 + r.catches * 10 } < /TableCell> <
+                    /TableRow>
+                ))
+            } <
+            /TableBody> <
+            /Table> <
+            /CardContent> <
+            /Card>
+        );
+    }
+
+    // --------------------------- Export ---------------------------
+    function ExportData({ store }) {
+        const download = () => {
+            const blob = new Blob([JSON.stringify(store, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `rdcricketacademy-data-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+        return <Button variant = "outline"
+        onClick = { download } > < Download className = "h-4 w-4 mr-1" / > Export JSON < /Button>;
+    }
+
+    // --------------------------- Main App ---------------------------
+    export default function App() {
+        const [store, setStore] = useStore();
+        const { me, login, logout } = useSession(store, setStore);
+
+        const isAdmin = me ? .role === "admin";
+
+        const addMatch = (m) => setStore({...store, matches: [m, ...store.matches] });
+        const saveScores = (matchId, lines) => {
+            // remove existing for this match, then add lines
+            const rest = store.performances.filter(p => p.matchId !== matchId);
+            setStore({...store, performances: [...rest, ...lines] });
+        };
+
+        // Admin quick add player
+        const [newPlayerName, setNewPlayerName] = useState("");
+        const [newPlayerEmail, setNewPlayerEmail] = useState("");
+        const addPlayer = () => {
+            if (!newPlayerName || !newPlayerEmail) return;
+            const id = uid("u");
+            setStore({...store, users: [...store.users, { id, name: newPlayerName, email: newPlayerEmail, password: "player123", role: "player" }] });
+            setNewPlayerName("");
+            setNewPlayerEmail("");
+        };
+
+        // Selected match for scoring
+        const [selMatchId, setSelMatchId] = useState(store.matches[0] ? .id || "");
+        useEffect(() => { if (store.matches.length && !byId(store.matches, selMatchId)) setSelMatchId(store.matches[0].id); }, [store.matches]);
+        const selMatch = store.matches.find(m => m.id === selMatchId) || store.matches[0];
+
+        return ( <
+            div className = "min-h-screen bg-gradient-to-b from-gray-50 to-white" >
+            <
+            Header me = { me }
+            onLogout = { logout }
+            />
+
+            {
+                !me ? ( <
+                        LoginCard onLogin = { login }
+                        />
+                    ) : ( <
+                        div className = "max-w-6xl mx-auto p-4 space-y-6" >
+                        <
+                        motion.div initial = {
+                            { opacity: 0, y: 6 } }
+                        animate = {
+                            { opacity: 1, y: 0 } } >
+                        <
+                        Card className = "rounded-2xl" >
+                        <
+                        CardContent className = "p-5 flex items-center justify-between" >
+                        <
+                        div >
+                        <
+                        div className = "text-lg font-semibold" > Welcome, { me.name.split(" ")[0] }! < /div> <
+                        div className = "text-sm text-muted-foreground" > Manage players, matches and view detailed scorecards. < /div> <
+                        /div> <
+                        div className = "flex gap-2 items-center" >
+                        <
+                        ExportData store = { store }
+                        /> <
+                        /div> <
+                        /CardContent> <
+                        /Card> <
+                        /motion.div>
+
+                        <
+                        Tabs defaultValue = { isAdmin ? "admin" : "mystats" }
+                        className = "w-full" >
+                        <
+                        TabsList className = "grid grid-cols-2 sm:grid-cols-4 gap-2 bg-muted/40 p-1 rounded-2xl" > {
+                            isAdmin && < TabsTrigger value = "admin" > Admin < /TabsTrigger>} <
+                            TabsTrigger value = "matches" > Matches < /TabsTrigger> <
+                            TabsTrigger value = "leaderboard" > Leaderboard < /TabsTrigger> <
+                            TabsTrigger value = "mystats" > My Stats < /TabsTrigger> <
+                            /TabsList>
+
+                            {
+                                isAdmin && ( <
+                                    TabsContent value = "admin"
+                                    className = "space-y-6" >
+                                    <
+                                    Card className = "rounded-2xl" >
+                                    <
+                                    CardHeader > < CardTitle > Players < /CardTitle></CardHeader >
+                                    <
+                                    CardContent className = "space-y-3" >
+                                    <
+                                    div className = "grid sm:grid-cols-3 gap-3" >
+                                    <
+                                    Input placeholder = "Full name"
+                                    value = { newPlayerName }
+                                    onChange = {
+                                        (e) => setNewPlayerName(e.target.value) }
+                                    /> <
+                                    Input placeholder = "Email"
+                                    value = { newPlayerEmail }
+                                    onChange = {
+                                        (e) => setNewPlayerEmail(e.target.value) }
+                                    /> <
+                                    Button onClick = { addPlayer } > < Plus className = "h-4 w-4 mr-1" / > Add Player < /Button> <
+                                    /div> <
+                                    Table >
+                                    <
+                                    TableHeader >
+                                    <
+                                    TableRow >
+                                    <
+                                    TableHead > Name < /TableHead> <
+                                    TableHead > Email < /TableHead> <
+                                    TableHead > Role < /TableHead> <
+                                    /TableRow> <
+                                    /TableHeader> <
+                                    TableBody > {
+                                        store.users.map(u => ( <
+                                            TableRow key = { u.id } >
+                                            <
+                                            TableCell > { u.name } < /TableCell> <
+                                            TableCell > { u.email } < /TableCell> <
+                                            TableCell > < Badge variant = "secondary"
+                                            className = "rounded-xl" > { u.role } < /Badge></TableCell >
+                                            <
+                                            /TableRow>
+                                        ))
+                                    } <
+                                    /TableBody> <
+                                    /Table> <
+                                    /CardContent> <
+                                    /Card>
+
+                                    <
+                                    Card className = "rounded-2xl" >
+                                    <
+                                    CardHeader > < CardTitle > Create Match < /CardTitle></CardHeader >
+                                    <
+                                    CardContent className = "space-y-4" >
+                                    <
+                                    NewMatch onCreate = { addMatch }
+                                    /> <
+                                    /CardContent> <
+                                    /Card>
+
+                                    <
+                                    Card className = "rounded-2xl" >
+                                    <
+                                    CardHeader > < CardTitle > Enter Scores < /CardTitle></CardHeader >
+                                    <
+                                    CardContent className = "space-y-4" > {
+                                        store.matches.length === 0 ? ( <
+                                            div className = "text-muted-foreground" > Create a match first. < /div>
+                                        ) : ( <
+                                            div className = "space-y-4" >
+                                            <
+                                            div className = "flex gap-3 items-center" >
+                                            <
+                                            Label className = "min-w-24" > Select match < /Label> <
+                                            Select value = { selMatchId }
+                                            onValueChange = { setSelMatchId } >
+                                            <
+                                            SelectTrigger className = "w-72" >
+                                            <
+                                            SelectValue placeholder = "Match" / >
+                                            <
+                                            /SelectTrigger> <
+                                            SelectContent > {
+                                                store.matches.map(m => ( <
+                                                    SelectItem key = { m.id }
+                                                    value = { m.id } > { m.date }— { m.opponent }({ m.ground }) < /SelectItem>
+                                                ))
+                                            } <
+                                            /SelectContent> <
+                                            /Select> <
+                                            /div> {
+                                                selMatch && ( <
+                                                    ScoreEntry players = { store.users }
+                                                    match = { selMatch }
+                                                    performances = { store.performances }
+                                                    onSave = { saveScores }
+                                                    />
+                                                )
+                                            } <
+                                            /div>
+                                        )
+                                    } <
+                                    /CardContent> <
+                                    /Card> <
+                                    /TabsContent>
+                                )
+                            }
+
+                            <
+                            TabsContent value = "matches"
+                            className = "space-y-4" > {
+                                store.matches.map(m => ( <
+                                    Card key = { m.id }
+                                    className = "rounded-2xl" >
+                                    <
+                                    CardHeader >
+                                    <
+                                    CardTitle className = "flex items-center justify-between" >
+                                    <
+                                    span > { m.date }•
+                                    vs { m.opponent } < /span> <
+                                    Badge variant = "secondary"
+                                    className = "rounded-xl" > { m.ground } < /Badge> <
+                                    /CardTitle> <
+                                    /CardHeader> <
+                                    CardContent >
+                                    <
+                                    Table >
+                                    <
+                                    TableCaption > Scorecard < /TableCaption> <
+                                    TableHeader >
+                                    <
+                                    TableRow >
+                                    <
+                                    TableHead > Player < /TableHead> <
+                                    TableHead > Runs < /TableHead> <
+                                    TableHead > Wickets < /TableHead> <
+                                    TableHead > Catches < /TableHead> <
+                                    /TableRow> <
+                                    /TableHeader> <
+                                    TableBody > {
+                                        store.users.map(u => {
+                                            const perf = store.performances.find(p => p.matchId === m.id && p.playerId === u.id);
+                                            if (!perf) return null;
+                                            return ( <
+                                                TableRow key = { u.id } >
+                                                <
+                                                TableCell > { u.name } < /TableCell> <
+                                                TableCell > { perf.runs } < /TableCell> <
+                                                TableCell > { perf.wickets } < /TableCell> <
+                                                TableCell > { perf.catches } < /TableCell> <
+                                                /TableRow>
+                                            );
+                                        })
+                                    } <
+                                    /TableBody> <
+                                    /Table> <
+                                    /CardContent> <
+                                    /Card>
+                                ))
+                            } <
+                            /TabsContent>
+
+                            <
+                            TabsContent value = "leaderboard" >
+                            <
+                            Leaderboard store = { store }
+                            /> <
+                            /TabsContent>
+
+                            <
+                            TabsContent value = "mystats" >
+                            <
+                            PlayerHistory store = { store }
+                            playerId = { me.id }
+                            /> <
+                            /TabsContent> <
+                            /Tabs>
+
+                            <
+                            footer className = "py-8 text-center text-xs text-muted-foreground" > ©{ new Date().getFullYear() }
+                            rdcricketacademy• Built
+                            for Giri Vishwan— Demo UI <
+                            /footer> <
+                            /div>
+                        )
+                    } <
+                    /div>
+            );
+        }
